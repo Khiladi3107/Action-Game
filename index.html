@@ -19,6 +19,7 @@
     #gameCanvas {
       background: #333;
       display: block;
+      box-shadow: 0 0 10px #0ff;
       touch-action: none;
     }
 
@@ -66,13 +67,17 @@
       color: #aaa;
       z-index: 10;
     }
+
+    body {
+      background: url('backgroung.gif') no-repeat center center fixed;
+      background-size: cover;
+    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
   <div id="info">Health: <span id="health">100</span> | Score: <span id="score">0</span></div>
 
-  <!-- On-screen controls -->
   <div class="touch-controls">
     <div class="row">
       <div class="btn" id="btn-up">▲</div>
@@ -85,11 +90,32 @@
   </div>
   <div id="shootTip">Tap canvas to shoot</div>
 
+  <audio id="shootSound" src="shoot.mp3"></audio>
+  <audio id="hitSound" src="hit.mp3"></audio>
+
   <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // Responsive canvas
+    const backgroundImg = new Image();
+    backgroundImg.src = 'backgroung.gif'; // Make sure the file exists
+
+    const playerImg = new Image();
+    playerImg.src = 'player.png';
+
+    const enemyImg = new Image();
+    enemyImg.src = 'enemy.png';
+
+    let player = { x: 100, y: 100, size: 20, speed: 4, health: 100 };
+    let bullets = [];
+    let enemies = [];
+    let powerUps = [];
+    let score = 0;
+    const keys = {};
+
+    const shootSound = document.getElementById('shootSound');
+    const hitSound = document.getElementById('hitSound');
+
     function resizeCanvas() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -99,17 +125,9 @@
 
     window.addEventListener('resize', resizeCanvas);
 
-    let player = { x: 100, y: 100, size: 20, speed: 4, health: 100 };
-    let bullets = [];
-    let enemies = [];
-    let score = 0;
-
-    const keys = {};
-
     document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
     document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-    // Mobile touch buttons
     const moveMap = {
       'btn-up': 'w',
       'btn-down': 's',
@@ -142,6 +160,7 @@
         dx: Math.cos(angle) * 6,
         dy: Math.sin(angle) * 6
       });
+      shootSound.play();
     }, { passive: false });
 
     canvas.addEventListener('click', e => {
@@ -152,6 +171,7 @@
         dx: Math.cos(angle) * 6,
         dy: Math.sin(angle) * 6
       });
+      shootSound.play();
     });
 
     function update() {
@@ -160,7 +180,6 @@
       if (keys['a']) player.x -= player.speed;
       if (keys['d']) player.x += player.speed;
 
-      // Keep player inside canvas
       player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
       player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
 
@@ -171,9 +190,9 @@
       bullets = bullets.filter(b => b.x > 0 && b.x < canvas.width && b.y > 0 && b.y < canvas.height);
 
       if (Math.random() < 0.02) {
-        const side = Math.random() < 0.5 ? 'left' : 'right';
+        const side = Math.random() < 0.5 ? 0 : canvas.width;
         enemies.push({
-          x: side === 'left' ? 0 : canvas.width,
+          x: side,
           y: Math.random() * canvas.height,
           size: 20,
           speed: 1 + Math.random()
@@ -191,6 +210,7 @@
           if (Math.hypot(b.x - e.x, b.y - e.y) < e.size) {
             bullets.splice(bi, 1);
             enemies.splice(ei, 1);
+            hitSound.play();
             score += 10;
           }
         });
@@ -203,17 +223,37 @@
         }
       });
 
+      if (Math.random() < 0.005) {
+        powerUps.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          size: 15
+        });
+      }
+
+      powerUps.forEach((p, i) => {
+        if (Math.hypot(player.x - p.x, player.y - p.y) < player.size + p.size) {
+          player.health = Math.min(100, player.health + 20);
+          powerUps.splice(i, 1);
+        }
+      });
+
       document.getElementById('health').textContent = player.health;
       document.getElementById('score').textContent = score;
     }
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
 
-      ctx.fillStyle = 'cyan';
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = 'green';
+      powerUps.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      ctx.drawImage(playerImg, player.x - player.size, player.y - player.size, player.size * 2, player.size * 2);
 
       ctx.fillStyle = 'yellow';
       bullets.forEach(b => {
@@ -222,11 +262,8 @@
         ctx.fill();
       });
 
-      ctx.fillStyle = 'red';
       enemies.forEach(e => {
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.drawImage(enemyImg, e.x - e.size, e.y - e.size, e.size * 2, e.size * 2);
       });
     }
 
@@ -244,8 +281,20 @@
       }
     }
 
-    resizeCanvas();
-    loop();
+    // Image load counter to prevent nested hell
+    let loadedImages = 0;
+    const totalImages = 3;
+    function checkAllLoaded() {
+      loadedImages++;
+      if (loadedImages === totalImages) {
+        resizeCanvas();
+        loop();
+      }
+    }
+
+    backgroundImg.onload = checkAllLoaded;
+    playerImg.onload = checkAllLoaded;
+    enemyImg.onload = checkAllLoaded;
   </script>
 </body>
 </html>
